@@ -1,0 +1,14 @@
+type cstr = ptr(u8)
+
+external printf : (cstr, int) -> unit
+external puts : cstr -> unit
+
+-- these types would belong in a prelude, but that does not exist yet for schmu
+type string = { cstr : cstr, length : int }
+type vector('a) = {
+  mutable data : ptr('a),
+  mutable length : int,
+  mutable capacity : int
+}
+
+puts("hello world".cstr)
