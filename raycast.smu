@@ -11,4 +11,48 @@ type vector('a) = {
   mutable capacity : int
 }
 
-puts("hello world".cstr)
+-- wrap these functions so we don't need to write `.cstr` all the time
+fun pf(str, i)
+  printf(str.cstr, i)
+end
+
+fun ps(str)
+  puts(str.cstr)
+end
+
+-- main below
+image_width = 256
+image_height = 256
+
+fun draw_gradient(width, height)
+  if width == image_width then
+    draw_gradient(0, height - 1)
+  elseif height < 0 then
+    ()
+  else
+    r = float_of_int(width) /. float_of_int(image_width - 1)
+    g = float_of_int(height) /. float_of_int(image_height - 1)
+    b = 0.25
+
+    ir = int_of_float(255.999 *. r)
+    ig = int_of_float(255.999 *. g)
+    ib = int_of_float(255.999 *. b)
+
+    pf("%i ", ir)
+    pf("%i ", ig)
+    pf("%i\n", ib)
+
+    -- recurse
+    draw_gradient(width + 1, height)
+  end
+end
+
+fun write_header()
+  ps("P3")
+  pf("%i ", image_width)
+  pf("%i\n", image_height)
+  ps("255")
+end
+
+write_header()
+draw_gradient(0, image_height - 1)
