@@ -17,18 +17,77 @@ type vector('a) = {
 
 type v3 = { x : float, y : float, z : float }
 type point = v3
--- We could also alias, but this seems more typesafe
-type color = { r : float, g : float, b : float }
-
+type color = v3
 type ray = { orig : point, dir : v3 }
+type hit_record = { p : point, normal : v3, t : float, front_face : bool }
+-- We don't have variants yet, so we make an extra return record
+type hit_return = { hit : bool, record : hit_record }
+
+type sphere = { center : point, radius : float }
+
+-- Constant for case of no hit
+no_hit = {
+  hit = false,
+  record = {
+    p = { x = 0.0, y = 0.0, z = 0.0 },
+    normal = { x = 0.0, y = 0.0, z = 0.0 },
+    t = 0.0,
+    front_face = false
+  }
+}
+-- There is no float_max_value yet :)
+infinity = 340282346640000000000000000000000000.0
 
 -- Wrap these functions so we don't need to write `.cstr` all the time
-fun pf(str, i)
+fun pi(str, i)
   printf(str.cstr, i)
 end
 
 fun ps(str)
   puts(str.cstr)
+end
+
+-- vector functions
+fun vector_init(size)
+  -- __malloc is a builtin, the compiler will free once the ptr
+  -- drops out of scope. (Or, in this case, when the scope the ptr is
+  -- returned to ends)
+  ptr = __malloc(size)
+  { data = ptr, length = 0, capacity = size }
+end
+
+fun vector_push(vec, val)
+  if vec.length == vec.capacity then
+    cap = vec.capacity * 2
+    vec.data <- __realloc(vec.data, cap)
+    vec.capacity <- cap
+  else () end
+  __unsafe_ptr_set(vec.data, vec.length, val)
+  vec.length <- vec.length + 1
+end
+
+fun vector_iter(vec, f)
+  fun inner(i)
+    if i == vec.length then
+      ()
+    else
+      f(__unsafe_ptr_get(vec.data, i))
+      inner(i+1)
+    end
+  end
+  inner(0)
+end
+
+fun vector_fold(vec, f, init)
+  fun inner(i, acc)
+    if i == vec.length then
+      acc
+    else
+      acc = f(acc, __unsafe_ptr_get(vec.data, i))
+      inner(i+1, acc)
+    end
+  end
+  inner(0, init)
 end
 
 -- v3 functions
@@ -59,17 +118,9 @@ end
 
 -- color functions
 fun write_color(color)
-  pf("%i ", (255.999 *. color.r) -> int_of_float)
-  pf("%i ",  (255.999 *. color.g) -> int_of_float)
-  pf("%i\n", (255.999 *. color.b) -> int_of_float)
-end
-
-fun color_add(lhs, rhs)
-  { r = lhs.r +. rhs.r, g = lhs.g +. rhs.g, b = lhs.b +. rhs.b }
-end
-
-fun color_scale(color, fac)
-  { r = color.r *. fac, g = color.g *. fac, b = color.b *. fac }
+  pi("%i ", (255.999 *. color.x) -> int_of_float)
+  pi("%i ",  (255.999 *. color.y) -> int_of_float)
+  pi("%i\n", (255.999 *. color.z) -> int_of_float)
 end
 
 -- ray functions
@@ -77,27 +128,111 @@ fun ray_at(ray, t)
   v3_scale(ray.dir, t) -> v3_add(ray.orig)
 end
 
--- main below
-fun hit_sphere(center, radius, ray)
-  oc = ray.orig -> v3_sub(center)
+-- sphere collision function
+fun hit_sphere(sphere, ray, t_min, t_max)
+  fun outside(root)
+    root <. t_min or t_max <. root
+  end
+
+  oc = ray.orig -> v3_sub(sphere.center)
   a = v3_dot(ray.dir, ray.dir)
-  b = 2.0 *. v3_dot(oc, ray.dir)
-  c = v3_dot(oc, oc) -. (radius *. radius)
-  discriminant = (b *. b) -. (4.0 *. a *. c)
-  discriminant >. 0.0
+  half_b = v3_dot(oc, ray.dir)
+  c = v3_dot(oc, oc) -. (sphere.radius *. sphere.radius)
+
+  discriminant = (half_b *. half_b) -. (a *. c)
+
+  if discriminant <. 0.0 then
+    no_hit
+  else
+    sqrtd = sqrt(discriminant)
+
+    -- Find the nearest root that lies in the acceptable range
+    -- Helper function to return a root
+    fun return_root(root)
+      p = ray_at(ray, root)
+      outward_normal = v3_sub(p, sphere.center) -> v3_div(sphere.radius)
+      front_face = v3_dot(ray.dir, outward_normal) >. 0.0
+      normal = if front_face then outward_normal
+               else v3_scale(outward_normal, 0.0 -. 1.0) end
+
+      { hit = true,
+        record = {
+          t = root,
+          p = p,
+          normal = normal,
+          front_face = front_face
+        }
+      }
+    end
+
+    root = (0.0 -. half_b -. sqrtd) /. a
+    if outside(root) then
+      root = (0.0 -. half_b +. sqrtd) /. a
+      if outside(root) then
+        no_hit
+      else
+        return_root(root)
+      end
+    else
+      return_root(root)
+    end
+  end
 end
 
-fun ray_color(ray)
-   -- sphere at center
-   -- No unary minus yet :)
-   if hit_sphere({ x = 0.0, y = 0.0, z = 0.0 -. 1.0 }, 0.5, ray) then
-     { r = 1.0, g = 0.0, b = 0.0 }
-   else
+-- World collision function
+-- bool hittable_list::hit(const ray& r, double t_min, double t_max, hit_record& rec) const {
+--     hit_record temp_rec;
+--     bool hit_anything = false;
+--     auto closest_so_far = t_max;
+
+--     for (const auto& object : objects) {
+--         if (object->hit(r, t_min, closest_so_far, temp_rec)) {
+--             hit_anything = true;
+--             closest_so_far = temp_rec.t;
+--             rec = temp_rec;
+--         }
+--     }
+
+--     return hit_anything;
+-- }
+
+fun hit_world(world, ray, t_min, t_max)
+  vector_fold(world, fun(acc, sphere)
+    hit = hit_sphere(sphere, ray, t_min, t_max)
+    if hit.hit and hit.record.t <. acc.record.t then
+      hit
+    else
+      acc
+    end
+  end,
+  no_hit)
+end
+
+-- fun hit_sphere(center, radius, ray)
+--   oc = ray.orig -> v3_sub(center)
+--   a = v3_dot(ray.dir, ray.dir)
+--   half_b = v3_dot(oc, ray.dir)
+--   c = v3_dot(oc, oc) -. (radius *. radius)
+--   discriminant = (half_b *. half_b) -. (a *. c)
+
+--   if discriminant <. 0.0 then
+--     0.0 -. 1.0
+--   else
+--     (0.0 -. half_b -. sqrt(discriminant)) /. a
+--   end
+-- end
+
+-- Returns the color of a given ray
+fun ray_color(ray, world)
+  hit = hit_world(world, ray, 0.0, infinity)
+  if hit.hit then
+    v3_add(hit.record.normal, { x = 1.0, y = 1.0, z = 1.0 }) -> v3_scale(0.5)
+  else
     unit_dir = v3_norm(ray.dir)
     t = 0.5 *. ( unit_dir.y +. 1.0 )
     -- lerp
-    color_scale({ r = 1.0, g = 1.0, b = 1.0 }, 1.0 -. t)
-    -> color_add(color_scale({ r = 0.5, g = 0.7, b = 1.0 }, t))
+    v3_scale({ x = 1.0, y = 1.0, z = 1.0 }, 1.0 -. t)
+    -> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t))
   end
 end
 
@@ -118,6 +253,11 @@ lower_left_corner = v3_sub(origin, v3_div(horizontal, 2.0))
                  -> v3_sub(v3_div(vertical, 2.0))
                  -> v3_sub({ x = 0.0, y = 0.0, z = focal_length })
 
+-- world
+world = vector_init(2)
+vector_push(world, { center = { x = 0.0, y = 0.0, z = 0.0 -. 1.0 }, radius = 0.5 })
+vector_push(world, { center = { x = 0.0, y = 0.0 -. 100.0, z = 0.0 -. 1.0 }, radius = 100.0 })
+
 fun render(width, height)
   if width == image_width then
     render(0, height - 1)
@@ -135,7 +275,7 @@ fun render(width, height)
     -- instead of an error message
     ray = { orig = origin, dir = dir }
 
-    color = ray_color(ray)
+    color = ray_color(ray, world)
 
     write_color(color)
 
@@ -146,8 +286,8 @@ end
 
 fun write_header()
   ps("P3")
-  pf("%i ", image_width)
-  pf("%i\n", image_height)
+  pi("%i ", image_width)
+  pi("%i\n", image_height)
   ps("255")
 end
 
