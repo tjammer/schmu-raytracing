@@ -1,7 +1,11 @@
 type cstr = ptr(u8)
 
+-- We use printing functions of libc
+-- Schmu does not have varargs, so we hardcode for 1 int
 external printf : (cstr, int) -> unit
 external puts : cstr -> unit
+
+external sqrt : float -> float
 
 -- these types would belong in a prelude, but that does not exist yet for schmu
 type string = { cstr : cstr, length : int }
@@ -11,7 +15,14 @@ type vector('a) = {
   mutable capacity : int
 }
 
--- wrap these functions so we don't need to write `.cstr` all the time
+type v3 = { x : float, y : float, z : float }
+type point = v3
+-- We could also alias, but this seems more typesafe
+type color = { r : float, g : float, b : float }
+
+type ray = { orig : point, dir : v3 }
+
+-- Wrap these functions so we don't need to write `.cstr` all the time
 fun pf(str, i)
   printf(str.cstr, i)
 end
@@ -20,30 +31,101 @@ fun ps(str)
   puts(str.cstr)
 end
 
--- main below
-image_width = 256
-image_height = 256
+-- v3 functions
+fun v3_add(lhs, rhs)
+  { x = lhs.x +. rhs.x, y = lhs.y +. rhs.y, z = lhs.z +. rhs.z }
+end
 
-fun draw_gradient(width, height)
+fun v3_sub(lhs, rhs)
+  { x = lhs.x -. rhs.x, y = lhs.y -. rhs.y, z = lhs.z -. rhs.z }
+end
+
+fun v3_scale(v3, factor)
+  { x = v3.x *. factor, y = v3.y *. factor, z = v3.z *. factor }
+end
+
+fun v3_div(v3, factor)
+  { x = v3.x /. factor, y = v3.y /. factor, z = v3.z /. factor }
+end
+
+fun v3_dot(lhs, rhs)
+  (lhs.x *. rhs.x) +. (lhs.y *. rhs.y) +. (lhs.z *. rhs.z)
+end
+
+fun v3_norm(v3)
+  length = v3_dot(v3, v3) -> sqrt
+  v3_div(v3, length)
+end
+
+-- color functions
+fun write_color(color)
+  pf("%i ", (255.999 *. color.r) -> int_of_float)
+  pf("%i ",  (255.999 *. color.g) -> int_of_float)
+  pf("%i\n", (255.999 *. color.b) -> int_of_float)
+end
+
+fun color_add(lhs, rhs)
+  { r = lhs.r +. rhs.r, g = lhs.g +. rhs.g, b = lhs.b +. rhs.b }
+end
+
+fun color_scale(color, fac)
+  { r = color.r *. fac, g = color.g *. fac, b = color.b *. fac }
+end
+
+-- ray functions
+fun ray_at(ray, t)
+  v3_scale(ray.dir, t) -> v3_add(ray.orig)
+end
+
+-- main below
+fun ray_color(ray)
+   unit_dir = v3_norm(ray.dir)
+   t = 0.5 *. ( unit_dir.y +. 1.0 )
+   -- lerp
+   color_scale({ r = 1.0, g = 1.0, b = 1.0 }, 1.0 -. t)
+   -> color_add(color_scale({ r = 0.5, g = 0.7, b = 1.0 }, t))
+end
+
+-- image
+aspect_ratio = 16.0 /. 9.0
+image_width = 400
+image_height = int_of_float(float_of_int(image_width) /. aspect_ratio)
+
+-- camera
+viewport_height = 2.0
+viewport_width = aspect_ratio *. viewport_height
+focal_length = 1.0
+
+origin = { x = 0.0, y = 0.0, z = 0.0 }
+horizontal = { x = viewport_width, y = 0.0, z = 0.0 }
+vertical = { x = 0.0, y = viewport_height, z = 0.0 }
+lower_left_corner = v3_sub(origin, v3_div(horizontal, 2.0))
+                 -> v3_sub(v3_div(vertical, 2.0))
+                 -> v3_sub({ x = 0.0, y = 0.0, z = focal_length })
+
+fun render(width, height)
   if width == image_width then
-    draw_gradient(0, height - 1)
-  elseif height < 0 then
+    render(0, height - 1)
+  elseif height < 0 then -- The book does it this way, so we follow suit
     ()
   else
-    r = float_of_int(width) /. float_of_int(image_width - 1)
-    g = float_of_int(height) /. float_of_int(image_height - 1)
-    b = 0.25
+    u = float_of_int(width) /. float_of_int(image_width -1)
+    v = float_of_int(height) /. float_of_int(image_height - 1)
 
-    ir = int_of_float(255.999 *. r)
-    ig = int_of_float(255.999 *. g)
-    ib = int_of_float(255.999 *. b)
+    dir = v3_add(lower_left_corner, v3_scale(horizontal, u))
+       -> v3_add(v3_scale(vertical, v))
+       -> v3_sub(origin)
 
-    pf("%i ", ir)
-    pf("%i ", ig)
-    pf("%i\n", ib)
+    -- TODO when [orig] is changed to [origin], we hit an internal error in the compiler
+    -- instead of an error message
+    ray = { orig = origin, dir = dir }
+
+    color = ray_color(ray)
+
+    write_color(color)
 
     -- recurse
-    draw_gradient(width + 1, height)
+    render(width + 1, height)
   end
 end
 
@@ -55,4 +137,4 @@ fun write_header()
 end
 
 write_header()
-draw_gradient(0, image_height - 1)
+render(0, image_height - 1)
