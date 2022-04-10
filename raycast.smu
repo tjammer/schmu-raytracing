@@ -78,12 +78,27 @@ fun ray_at(ray, t)
 end
 
 -- main below
+fun hit_sphere(center, radius, ray)
+  oc = ray.orig -> v3_sub(center)
+  a = v3_dot(ray.dir, ray.dir)
+  b = 2.0 *. v3_dot(oc, ray.dir)
+  c = v3_dot(oc, oc) -. (radius *. radius)
+  discriminant = (b *. b) -. (4.0 *. a *. c)
+  discriminant >. 0.0
+end
+
 fun ray_color(ray)
-   unit_dir = v3_norm(ray.dir)
-   t = 0.5 *. ( unit_dir.y +. 1.0 )
-   -- lerp
-   color_scale({ r = 1.0, g = 1.0, b = 1.0 }, 1.0 -. t)
-   -> color_add(color_scale({ r = 0.5, g = 0.7, b = 1.0 }, t))
+   -- sphere at center
+   -- No unary minus yet :)
+   if hit_sphere({ x = 0.0, y = 0.0, z = 0.0 -. 1.0 }, 0.5, ray) then
+     { r = 1.0, g = 0.0, b = 0.0 }
+   else
+    unit_dir = v3_norm(ray.dir)
+    t = 0.5 *. ( unit_dir.y +. 1.0 )
+    -- lerp
+    color_scale({ r = 1.0, g = 1.0, b = 1.0 }, 1.0 -. t)
+    -> color_add(color_scale({ r = 0.5, g = 0.7, b = 1.0 }, t))
+  end
 end
 
 -- image
