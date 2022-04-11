@@ -137,6 +137,24 @@ fun v3_norm(v3)
   v3_div(v3, length)
 end
 
+fun v3_random_range(min, max)
+  {
+    x = random_range(min, max),
+    y = random_range(min, max),
+    z = random_range(min, max)
+  }
+end
+
+fun v3_random_in_unit_sphere()
+  p = v3_random_range(0.0 -. 1.0, 1.0)
+  if v3_dot(p, p) <. 1.0 then p
+  else v3_random_in_unit_sphere() end
+end
+
+fun v3_random_unit_v3()
+  v3_random_in_unit_sphere() -> v3_norm()
+end
+
 -- utility
 fun clamp(x, min, max)
   if x <. min then min
@@ -147,11 +165,14 @@ end
 -- color functions
 fun write_color(color, samples_per_pixel)
   scale = 1.0 /. samples_per_pixel
-  color = v3_scale(color, scale)
+  -- pseudo gamma correction
+  r = sqrt(color.x *. scale)
+  g = sqrt(color.y *. scale)
+  b = sqrt(color.z *. scale)
 
-  pi("%i ", (clamp(color.x, 0.0, 0.999) *. 255.999) -> int_of_float)
-  pi("%i ", (clamp(color.y, 0.0, 0.999) *. 255.999) -> int_of_float)
-  pi("%i\n", (clamp(color.z, 0.0, 0.999) *. 255.999) -> int_of_float)
+  pi("%i ", (clamp(r, 0.0, 0.999) *. 256.0) -> int_of_float)
+  pi("%i ", (clamp(g, 0.0, 0.999) *. 256.0) -> int_of_float)
+  pi("%i\n", (clamp(b, 0.0, 0.999) *. 256.0) -> int_of_float)
 end
 
 -- ray functions
@@ -230,16 +251,25 @@ fun hit_world(world, ray, t_min)
 end
 
 -- Returns the color of a given ray
-fun ray_color(ray, world)
-  hit = hit_world(world, ray, 0.0)
-  if hit.hit then
-    v3_add(hit.record.normal, { x = 1.0, y = 1.0, z = 1.0 }) -> v3_scale(0.5)
+fun ray_color(ray, world, depth)
+  if depth == 0 then
+    -- No light is gathered
+    { x = 0.0, y = 0.0, z = 0.0 }
   else
-    unit_dir = v3_norm(ray.dir)
-    t = 0.5 *. (unit_dir.y +. 1.0)
-    -- lerp
-    v3_scale({ x = 1.0, y = 1.0, z = 1.0 }, 1.0 -. t)
-    -> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t))
+    hit = hit_world(world, ray, 0.001)
+    if hit.hit then
+      target = v3_add(hit.record.p, hit.record.normal)
+        -> v3_add(v3_random_unit_v3())
+      ray = { orig = hit.record.p, dir = v3_sub(target, hit.record.p) }
+      -- no tail call
+      v3_scale(ray_color(ray, world, depth - 1), 0.5)
+    else
+      unit_dir = v3_norm(ray.dir)
+      t = 0.5 *. (unit_dir.y +. 1.0)
+      -- lerp
+      v3_scale({ x = 1.0, y = 1.0, z = 1.0 }, (1.0 -. t) *. 1.0)
+      -> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t *. 1.0))
+    end
   end
 end
 
@@ -248,6 +278,7 @@ aspect_ratio = 16.0 /. 9.0
 image_width = 400
 image_height = int_of_float(float_of_int(image_width) /. aspect_ratio)
 samples_per_pixel = 100
+recursion_depth = 50
 
 -- camera
 viewport_height = 2.0
@@ -284,12 +315,12 @@ fun render(width, height)
         color
       else
         u = (float_of_int(width) +. random_float())
-          /. float_of_int(image_width -1)
+          /. float_of_int(image_width - 1)
         v = (float_of_int(height) +. random_float())
           /. float_of_int(image_height - 1)
 
         ray = camera_get_ray(cam, u, v)
-        color = ray_color(ray, world) -> v3_add(color)
+        color = ray_color(ray, world, recursion_depth) -> v3_add(color)
         loop_samples(color, i + 1)
       end
     end
