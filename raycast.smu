@@ -6,6 +6,7 @@ external printf : (cstr, int) -> unit
 external puts : cstr -> unit
 
 external sqrt : float -> float
+external abs : float -> float
 
 external rand_max : unit -> int
 external rand : unit -> int
@@ -22,11 +23,22 @@ type v3 = { x : float, y : float, z : float }
 type point = v3
 type color = v3
 type ray = { orig : point, dir : v3 }
-type hit_record = { p : point, normal : v3, t : float, front_face : bool }
--- We don't have variants yet, so we make an extra return record
-type hit_return = { hit : bool, record : hit_record }
+-- We don't have variants yet, so we 'enumerate' materials here:
+-- 0: lambertian
+-- 1: metal
+type material = { kind : int, albedo : color, fuzz : float }
+type hit_record = {
+  p : point,
+  normal : v3,
+  t : float,
+  front_face : bool
+}
+type scatter_record = { hit: bool, attenuation : color, scattered : ray }
 
-type sphere = { center : point, radius : float }
+-- We don't have variants yet, so we make an extra return record
+type hit_return = { hit : bool, record : hit_record, material : material }
+
+type sphere = { center : point, radius : float, material : material }
 
 type camera = {
   origin : point,
@@ -45,7 +57,8 @@ no_hit = {
     normal = { x = 0.0, y = 0.0, z = 0.0 },
     t = infinity,
     front_face = false
-  }
+  },
+  material = { kind = 0, albedo = { x = 0.0, y = 0.0, z = 0.0 }, fuzz = 1.0 }
 }
 
 -- C stdlib wrappers
@@ -124,6 +137,10 @@ fun v3_scale(v3, factor)
   { x = v3.x *. factor, y = v3.y *. factor, z = v3.z *. factor }
 end
 
+fun v3_scale_elems(lhs, rhs)
+  { x = lhs.x *. rhs.x, y = lhs.y *. rhs.y, z = lhs.z *. rhs.z }
+end
+
 fun v3_div(v3, factor)
   { x = v3.x /. factor, y = v3.y /. factor, z = v3.z /. factor }
 end
@@ -153,6 +170,15 @@ end
 
 fun v3_random_unit_v3()
   v3_random_in_unit_sphere() -> v3_norm()
+end
+
+fun v3_near_zero(v3)
+  s = 0.00001
+  abs(v3.x) <. s and abs(v3.y) <. s and abs(v3.z) <. s
+end
+
+fun v3_reflect(v3, n)
+  v3_sub(v3, v3_scale(n, v3_dot(v3, n) *. 2.0))
 end
 
 -- utility
@@ -220,7 +246,8 @@ fun hit_sphere(sphere, ray, t_min, t_max)
           p = p,
           normal = normal,
           front_face = front_face
-        }
+        },
+        material = sphere.material
       }
     end
 
@@ -250,6 +277,34 @@ fun hit_world(world, ray, t_min)
   no_hit)
 end
 
+-- Materials
+fun lambertian_scatter(ray_in, hit)
+  scatter_direction = v3_add(hit.record.normal, v3_random_unit_v3())
+  scatter_direction =
+    if v3_near_zero(scatter_direction) then hit.record.normal
+    else scatter_direction end
+  {
+    hit = true,
+    attenuation = hit.material.albedo,
+    scattered = { orig = hit.record.p, dir = scatter_direction }
+  }
+end
+
+fun metal_scatter(ray_in, hit)
+  reflected = v3_norm(ray_in.dir) -> v3_reflect(hit.record.normal)
+  dir = v3_scale(v3_random_unit_v3(), hit.material.fuzz) -> v3_add(reflected)
+  {
+    hit = v3_dot(reflected, hit.record.normal) >. 0.0,
+    attenuation = hit.material.albedo,
+    scattered = { orig = hit.record.p, dir = dir }
+  }
+end
+
+fun scatter(ray_in, hit : hit_return)
+  if hit.material.kind == 0 then lambertian_scatter(ray_in, hit)
+  else metal_scatter(ray_in, hit) end
+end
+
 -- Returns the color of a given ray
 fun ray_color(ray, world, depth)
   if depth == 0 then
@@ -258,11 +313,14 @@ fun ray_color(ray, world, depth)
   else
     hit = hit_world(world, ray, 0.001)
     if hit.hit then
-      target = v3_add(hit.record.p, hit.record.normal)
-        -> v3_add(v3_random_unit_v3())
-      ray = { orig = hit.record.p, dir = v3_sub(target, hit.record.p) }
-      -- no tail call
-      v3_scale(ray_color(ray, world, depth - 1), 0.5)
+      -- TODO change to scatter
+      sctr = scatter(ray, hit)
+      if sctr.hit then
+        -- no tail call
+        v3_scale_elems(ray_color(sctr.scattered, world, depth - 1), sctr.attenuation)
+      else
+        { x = 0.0, y = 0.0, z = 0.0 }
+      end
     else
       unit_dir = v3_norm(ray.dir)
       t = 0.5 *. (unit_dir.y +. 1.0)
@@ -300,9 +358,40 @@ cam = {
 }
 
 -- world
+ground = { kind = 0, albedo = { x = 0.8, y = 0.8, z = 0.0 }, fuzz = 0.0 }
+center = { kind = 0, albedo = { x = 0.7, y = 0.3, z = 0.3 }, fuzz = 0.0 }
+left = { kind = 1, albedo = { x = 0.8, y = 0.8, z = 0.8 }, fuzz = 0.3 }
+right = { kind = 1, albedo = { x = 0.8, y = 0.6, z = 0.2 }, fuzz = 1.0}
+
 world = vector_init(2)
-vector_push(world, { center = { x = 0.0, y = 0.0, z = 0.0 -. 1.0 }, radius = 0.5 })
-vector_push(world, { center = { x = 0.0, y = 0.0 -. 100.5, z = 0.0 -. 1.0 }, radius = 100.0 })
+vector_push(world,
+  {
+    center = { x = 0.0, y = 0.0 -. 100.5, z = 0.0 -. 1.0 },
+    radius = 100.0,
+    material = ground
+  }
+)
+vector_push(world,
+  {
+    center = { x = 0.0, y = 0.0, z = 0.0 -. 1.0 },
+    radius = 0.5,
+    material = center
+  }
+)
+vector_push(world,
+  {
+    center = { x = 0.0 -. 1.0, y = 0.0, z = 0.0 -. 1.0 },
+    radius = 0.5,
+    material = left
+  }
+)
+vector_push(world,
+  {
+    center = { x = 1.0, y = 0.0, z = 0.0 -. 1.0 },
+    radius = 0.5,
+    material = right
+  }
+)
 
 fun render(width, height)
   if width == image_width then
