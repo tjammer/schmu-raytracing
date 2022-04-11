@@ -7,6 +7,9 @@ external puts : cstr -> unit
 
 external sqrt : float -> float
 
+external rand_max : unit -> int
+external rand : unit -> int
+
 -- these types would belong in a prelude, but that does not exist yet for schmu
 type string = { cstr : cstr, length : int }
 type vector('a) = {
@@ -25,6 +28,13 @@ type hit_return = { hit : bool, record : hit_record }
 
 type sphere = { center : point, radius : float }
 
+type camera = {
+  origin : point,
+  lower_left_corner : point,
+  horizontal : v3,
+  vertical : v3
+}
+
 -- There is no float_max_value yet :)
 infinity = 340282346640000000000000000000000000.0
 -- Constant for case of no hit
@@ -38,6 +48,7 @@ no_hit = {
   }
 }
 
+-- C stdlib wrappers
 -- Wrap these functions so we don't need to write `.cstr` all the time
 fun pi(str, i)
   printf(str.cstr, i)
@@ -45,6 +56,16 @@ end
 
 fun ps(str)
   puts(str.cstr)
+end
+
+fun random_float()
+  -- Returns a random float in [0, 1)
+  float_of_int(rand()) /. (float_of_int(rand_max()) +. 1.0)
+end
+
+fun random_range(min, max)
+  -- Returns a random float in [min, max)
+  min +. ((max -. min) *. random_float())
 end
 
 -- vector functions
@@ -116,16 +137,33 @@ fun v3_norm(v3)
   v3_div(v3, length)
 end
 
+-- utility
+fun clamp(x, min, max)
+  if x <. min then min
+  elseif x >. max then max
+  else x end
+end
+
 -- color functions
-fun write_color(color)
-  pi("%i ", (255.999 *. color.x) -> int_of_float)
-  pi("%i ",  (255.999 *. color.y) -> int_of_float)
-  pi("%i\n", (255.999 *. color.z) -> int_of_float)
+fun write_color(color, samples_per_pixel)
+  scale = 1.0 /. samples_per_pixel
+  color = v3_scale(color, scale)
+
+  pi("%i ", (clamp(color.x, 0.0, 0.999) *. 255.999) -> int_of_float)
+  pi("%i ", (clamp(color.y, 0.0, 0.999) *. 255.999) -> int_of_float)
+  pi("%i\n", (clamp(color.z, 0.0, 0.999) *. 255.999) -> int_of_float)
 end
 
 -- ray functions
 fun ray_at(ray, t)
   v3_scale(ray.dir, t) -> v3_add(ray.orig)
+end
+
+-- camera functions
+fun camera_get_ray(camera, u, v)
+  dir = v3_add(camera.lower_left_corner, v3_scale(camera.horizontal, u))
+     -> v3_add(v3_scale(camera.vertical, v)) -> v3_sub(camera.origin)
+  { orig = camera.origin, dir = dir }
 end
 
 -- sphere collision function
@@ -209,6 +247,7 @@ end
 aspect_ratio = 16.0 /. 9.0
 image_width = 400
 image_height = int_of_float(float_of_int(image_width) /. aspect_ratio)
+samples_per_pixel = 100
 
 -- camera
 viewport_height = 2.0
@@ -221,6 +260,13 @@ vertical = { x = 0.0, y = viewport_height, z = 0.0 }
 lower_left_corner = v3_sub(origin, v3_div(horizontal, 2.0))
                  -> v3_sub(v3_div(vertical, 2.0))
                  -> v3_sub({ x = 0.0, y = 0.0, z = focal_length })
+-- we really need name punning here
+cam = {
+  origin = origin,
+  lower_left_corner = lower_left_corner,
+  horizontal = horizontal,
+  vertical = vertical
+}
 
 -- world
 world = vector_init(2)
@@ -233,20 +279,25 @@ fun render(width, height)
   elseif height < 0 then -- The book does it this way, so we follow suit
     ()
   else
-    u = float_of_int(width) /. float_of_int(image_width -1)
-    v = float_of_int(height) /. float_of_int(image_height - 1)
+    fun loop_samples(color, i)
+      if i == samples_per_pixel then
+        color
+      else
+        u = (float_of_int(width) +. random_float())
+          /. float_of_int(image_width -1)
+        v = (float_of_int(height) +. random_float())
+          /. float_of_int(image_height - 1)
 
-    dir = v3_add(lower_left_corner, v3_scale(horizontal, u))
-       -> v3_add(v3_scale(vertical, v))
-       -> v3_sub(origin)
+        ray = camera_get_ray(cam, u, v)
+        color = ray_color(ray, world) -> v3_add(color)
+        loop_samples(color, i + 1)
+      end
+    end
 
-    -- TODO when [orig] is changed to [origin], we hit an internal error in the compiler
-    -- instead of an error message
-    ray = { orig = origin, dir = dir }
+    no_color = { x = 0.0, y = 0.0, z = 0.0 }
+    color = loop_samples(no_color, 0)
 
-    color = ray_color(ray, world)
-
-    write_color(color)
+    write_color(color, samples_per_pixel -> float_of_int)
 
     -- recurse
     render(width + 1, height)
