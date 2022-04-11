@@ -25,18 +25,18 @@ type hit_return = { hit : bool, record : hit_record }
 
 type sphere = { center : point, radius : float }
 
+-- There is no float_max_value yet :)
+infinity = 340282346640000000000000000000000000.0
 -- Constant for case of no hit
 no_hit = {
   hit = false,
   record = {
     p = { x = 0.0, y = 0.0, z = 0.0 },
     normal = { x = 0.0, y = 0.0, z = 0.0 },
-    t = 0.0,
+    t = infinity,
     front_face = false
   }
 }
--- There is no float_max_value yet :)
-infinity = 340282346640000000000000000000000000.0
 
 -- Wrap these functions so we don't need to write `.cstr` all the time
 fun pi(str, i)
@@ -151,7 +151,7 @@ fun hit_sphere(sphere, ray, t_min, t_max)
     fun return_root(root)
       p = ray_at(ray, root)
       outward_normal = v3_sub(p, sphere.center) -> v3_div(sphere.radius)
-      front_face = v3_dot(ray.dir, outward_normal) >. 0.0
+      front_face = v3_dot(ray.dir, outward_normal) <. 0.0
       normal = if front_face then outward_normal
                else v3_scale(outward_normal, 0.0 -. 1.0) end
 
@@ -180,56 +180,25 @@ fun hit_sphere(sphere, ray, t_min, t_max)
 end
 
 -- World collision function
--- bool hittable_list::hit(const ray& r, double t_min, double t_max, hit_record& rec) const {
---     hit_record temp_rec;
---     bool hit_anything = false;
---     auto closest_so_far = t_max;
-
---     for (const auto& object : objects) {
---         if (object->hit(r, t_min, closest_so_far, temp_rec)) {
---             hit_anything = true;
---             closest_so_far = temp_rec.t;
---             rec = temp_rec;
---         }
---     }
-
---     return hit_anything;
--- }
-
-fun hit_world(world, ray, t_min, t_max)
+fun hit_world(world, ray, t_min)
+  -- NOTE If I leave the unused t_max in, there are
+  -- problems with monomorphization
   vector_fold(world, fun(acc, sphere)
-    hit = hit_sphere(sphere, ray, t_min, t_max)
-    if hit.hit and hit.record.t <. acc.record.t then
-      hit
-    else
-      acc
-    end
+    hit = hit_sphere(sphere, ray, t_min, acc.record.t)
+    if hit.hit then hit
+    else acc end
   end,
   no_hit)
 end
 
--- fun hit_sphere(center, radius, ray)
---   oc = ray.orig -> v3_sub(center)
---   a = v3_dot(ray.dir, ray.dir)
---   half_b = v3_dot(oc, ray.dir)
---   c = v3_dot(oc, oc) -. (radius *. radius)
---   discriminant = (half_b *. half_b) -. (a *. c)
-
---   if discriminant <. 0.0 then
---     0.0 -. 1.0
---   else
---     (0.0 -. half_b -. sqrt(discriminant)) /. a
---   end
--- end
-
 -- Returns the color of a given ray
 fun ray_color(ray, world)
-  hit = hit_world(world, ray, 0.0, infinity)
+  hit = hit_world(world, ray, 0.0)
   if hit.hit then
     v3_add(hit.record.normal, { x = 1.0, y = 1.0, z = 1.0 }) -> v3_scale(0.5)
   else
     unit_dir = v3_norm(ray.dir)
-    t = 0.5 *. ( unit_dir.y +. 1.0 )
+    t = 0.5 *. (unit_dir.y +. 1.0)
     -- lerp
     v3_scale({ x = 1.0, y = 1.0, z = 1.0 }, 1.0 -. t)
     -> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t))
@@ -256,7 +225,7 @@ lower_left_corner = v3_sub(origin, v3_div(horizontal, 2.0))
 -- world
 world = vector_init(2)
 vector_push(world, { center = { x = 0.0, y = 0.0, z = 0.0 -. 1.0 }, radius = 0.5 })
-vector_push(world, { center = { x = 0.0, y = 0.0 -. 100.0, z = 0.0 -. 1.0 }, radius = 100.0 })
+vector_push(world, { center = { x = 0.0, y = 0.0 -. 100.5, z = 0.0 -. 1.0 }, radius = 100.0 })
 
 fun render(width, height)
   if width == image_width then
