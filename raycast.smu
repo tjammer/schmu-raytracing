@@ -7,6 +7,8 @@ external puts : cstr -> unit
 
 external sqrt : float -> float
 external abs : float -> float
+external fmin : (float, float) -> float
+external pow : (float, float) -> float
 
 external rand_max : unit -> int
 external rand : unit -> int
@@ -26,7 +28,7 @@ type ray = { orig : point, dir : v3 }
 -- We don't have variants yet, so we 'enumerate' materials here:
 -- 0: lambertian
 -- 1: metal
-type material = { kind : int, albedo : color, fuzz : float }
+type material = { kind : int, albedo : color, fuzz_or_ir : float }
 type hit_record = {
   p : point,
   normal : v3,
@@ -58,7 +60,7 @@ no_hit = {
     t = infinity,
     front_face = false
   },
-  material = { kind = 0, albedo = { x = 0.0, y = 0.0, z = 0.0 }, fuzz = 1.0 }
+  material = { kind = 0, albedo = { x = 0.0, y = 0.0, z = 0.0 }, fuzz_or_ir = 1.0 }
 }
 
 -- C stdlib wrappers
@@ -163,7 +165,7 @@ fun v3_random_range(min, max)
 end
 
 fun v3_random_in_unit_sphere()
-  p = v3_random_range(0.0 -. 1.0, 1.0)
+  p = v3_random_range(-1.0, 1.0)
   if v3_dot(p, p) <. 1.0 then p
   else v3_random_in_unit_sphere() end
 end
@@ -179,6 +181,13 @@ end
 
 fun v3_reflect(v3, n)
   v3_sub(v3, v3_scale(n, v3_dot(v3, n) *. 2.0))
+end
+
+fun v3_refract(uv, n, etai_over_etat)
+  cos_theta = v3_dot(v3_scale(uv, -1.0), n) -> fmin(1.0)
+  r_out_perp = v3_scale(n, cos_theta) -> v3_add(uv) -> v3_scale(etai_over_etat)
+  r_out_parallel = v3_scale(n, -sqrt(abs(1.0 -. v3_dot(r_out_perp, r_out_perp))))
+  v3_add(r_out_perp, r_out_parallel)
 end
 
 -- utility
@@ -238,7 +247,7 @@ fun hit_sphere(sphere, ray, t_min, t_max)
       outward_normal = v3_sub(p, sphere.center) -> v3_div(sphere.radius)
       front_face = v3_dot(ray.dir, outward_normal) <. 0.0
       normal = if front_face then outward_normal
-               else v3_scale(outward_normal, 0.0 -. 1.0) end
+               else v3_scale(outward_normal, -1.0) end
 
       { hit = true,
         record = {
@@ -251,9 +260,9 @@ fun hit_sphere(sphere, ray, t_min, t_max)
       }
     end
 
-    root = (0.0 -. half_b -. sqrtd) /. a
+    root = (-half_b -. sqrtd) /. a
     if outside(root) then
-      root = (0.0 -. half_b +. sqrtd) /. a
+      root = (-half_b +. sqrtd) /. a
       if outside(root) then
         no_hit
       else
@@ -292,7 +301,8 @@ end
 
 fun metal_scatter(ray_in, hit)
   reflected = v3_norm(ray_in.dir) -> v3_reflect(hit.record.normal)
-  dir = v3_scale(v3_random_unit_v3(), hit.material.fuzz) -> v3_add(reflected)
+  dir = v3_scale(v3_random_unit_v3(), hit.material.fuzz_or_ir)
+    -> v3_add(reflected)
   {
     hit = v3_dot(reflected, hit.record.normal) >. 0.0,
     attenuation = hit.material.albedo,
@@ -300,9 +310,40 @@ fun metal_scatter(ray_in, hit)
   }
 end
 
+fun dielectric_scatter(ray_in, hit)
+    fun reflectance(cosine, ref_idx)
+      -- Schlick's approximation for reflectance
+      r0 = (1.0 -. ref_idx) /. (1.0 +. ref_idx)
+      r0 = r0 *. r0
+      r0 +. ((1.0 -. r0) *. pow(1.0 -. cosine, 5.0))
+    end
+
+  refrac_ratio = if hit.record.front_face then
+      1.0 /. hit.material.fuzz_or_ir
+    else hit.material.fuzz_or_ir end
+
+  unit_dir = v3_norm(ray_in.dir)
+  cos_theta = v3_dot(v3_scale(unit_dir, -1.0), hit.record.normal) -> fmin(1.0)
+  sin_theta = sqrt(1.0 -. (cos_theta *. cos_theta))
+
+  cannot_refract = (refrac_ratio *. sin_theta) >. 1.0
+  dir = if cannot_refract or (reflectance(cos_theta, refrac_ratio) >. random_float()) then
+      v3_reflect(unit_dir, hit.record.normal)
+    else
+      v3_refract(unit_dir, hit.record.normal, refrac_ratio)
+    end
+
+  {
+    hit = true,
+    attenuation = { x = 1.0, y = 1.0, z = 1.0 },
+    scattered = { orig = hit.record.p, dir = dir }
+  }
+end
+
 fun scatter(ray_in, hit : hit_return)
   if hit.material.kind == 0 then lambertian_scatter(ray_in, hit)
-  else metal_scatter(ray_in, hit) end
+  elseif hit.material.kind == 1 then metal_scatter(ray_in, hit)
+  else dielectric_scatter(ray_in, hit) end
 end
 
 -- Returns the color of a given ray
@@ -358,36 +399,36 @@ cam = {
 }
 
 -- world
-ground = { kind = 0, albedo = { x = 0.8, y = 0.8, z = 0.0 }, fuzz = 0.0 }
-center = { kind = 0, albedo = { x = 0.7, y = 0.3, z = 0.3 }, fuzz = 0.0 }
-left = { kind = 1, albedo = { x = 0.8, y = 0.8, z = 0.8 }, fuzz = 0.3 }
-right = { kind = 1, albedo = { x = 0.8, y = 0.6, z = 0.2 }, fuzz = 1.0}
+ground = { kind = 0, albedo = { x = 0.8, y = 0.8, z = 0.0 }, fuzz_or_ir = 0.0 }
+center = { kind = 0, albedo = { x = 0.1, y = 0.2, z = 0.5 }, fuzz_or_ir = 1.5 }
+left = { kind = 2, albedo = { x = 1.0, y = 1.0, z = 1.0 }, fuzz_or_ir = 1.5 }
+right = { kind = 1, albedo = { x = 0.8, y = 0.6, z = 0.2 }, fuzz_or_ir = 0.0}
 
 world = vector_init(2)
 vector_push(world,
   {
-    center = { x = 0.0, y = 0.0 -. 100.5, z = 0.0 -. 1.0 },
+    center = { x = 0.0, y = -100.5, z = -1.0 },
     radius = 100.0,
     material = ground
   }
 )
 vector_push(world,
   {
-    center = { x = 0.0, y = 0.0, z = 0.0 -. 1.0 },
+    center = { x = 0.0, y = 0.0, z = -1.0 },
     radius = 0.5,
     material = center
   }
 )
 vector_push(world,
   {
-    center = { x = 0.0 -. 1.0, y = 0.0, z = 0.0 -. 1.0 },
+    center = { x = -1.0, y = 0.0, z = -1.0 },
     radius = 0.5,
     material = left
   }
 )
 vector_push(world,
   {
-    center = { x = 1.0, y = 0.0, z = 0.0 -. 1.0 },
+    center = { x = 1.0, y = 0.0, z = -1.0 },
     radius = 0.5,
     material = right
   }
