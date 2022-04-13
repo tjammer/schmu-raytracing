@@ -47,7 +47,11 @@ type camera = {
   origin : point,
   lower_left_corner : point,
   horizontal : v3,
-  vertical : v3
+  vertical : v3,
+  u : v3,
+  v : v3,
+  w : v3,
+  lens_radius : float
 }
 
 -- There is no float_max_value yet :)
@@ -158,6 +162,10 @@ fun v3_dot(lhs, rhs)
   (lhs.x *. rhs.x) +. (lhs.y *. rhs.y) +. (lhs.z *. rhs.z)
 end
 
+fun v3_length(v3)
+  v3_dot(v3, v3) -> sqrt
+end
+
 fun v3_norm(v3)
   length = v3_dot(v3, v3) -> sqrt
   v3_div(v3, length)
@@ -179,6 +187,12 @@ end
 
 fun v3_random_unit_v3()
   v3_random_in_unit_sphere() -> v3_norm()
+end
+
+fun v3_random_in_unit_disk()
+  p = { x = random_range(-1.0, 1.0), y = random_range(-1.0, 1.0), z = 0.0 }
+  if v3_dot(p, p) <. 1.0 then p
+  else v3_random_in_unit_disk() end
 end
 
 fun v3_near_zero(v3)
@@ -231,7 +245,7 @@ fun ray_at(ray, t)
 end
 
 -- camera functions
-fun camera_create(lookfrom, lookat, vup, vfov, aspect_ratio)
+fun camera_create(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist)
   theta = degrees_to_radians(vfov)
   h = tan(theta /. 2.0)
   viewport_height = 2.0 *. h
@@ -241,21 +255,27 @@ fun camera_create(lookfrom, lookat, vup, vfov, aspect_ratio)
   u = v3_norm(v3_cross(vup, w))
   v = v3_cross(w, u)
 
-  horizontal = v3_scale(u, viewport_width)
-  vertical = v3_scale(v, viewport_height)
+  horizontal = v3_scale(u, viewport_width) -> v3_scale(focus_dist)
+  vertical = v3_scale(v, viewport_height) -> v3_scale(focus_dist)
   {
     origin = lookfrom,
     lower_left_corner = v3_sub(lookfrom, v3_div(horizontal, 2.0)) ->
-      v3_sub(v3_div(vertical, 2.0)) -> v3_sub(w),
+      v3_sub(v3_div(vertical, 2.0)) -> v3_sub(v3_scale(w, focus_dist)),
     horizontal,
-    vertical
+    vertical,
+    lens_radius = aperture /. 2.0,
+    u, v, w
   }
 end
 
 fun camera_get_ray(camera, u, v)
+  rd = v3_scale(v3_random_in_unit_disk(), camera.lens_radius)
+  offset = v3_scale(camera.u, rd.x) -> v3_add(v3_scale(camera.v, rd.y))
+
   dir = v3_add(camera.lower_left_corner, v3_scale(camera.horizontal, u))
      -> v3_add(v3_scale(camera.vertical, v)) -> v3_sub(camera.origin)
-  { orig = camera.origin, dir }
+     -> v3_sub(offset)
+  { orig = v3_add(camera.origin, offset), dir }
 end
 
 -- sphere collision function
@@ -410,18 +430,17 @@ end
 
 -- image
 aspect_ratio = 16.0 /. 9.0
+lookfrom = { x = 3.0, y = 3.0, z = 2.0 }
+lookat = { x = 0.0, y = 0.0, z = -1.0 }
+vup = { x = 0.0, y = 1.0, z = 0.0 }
+aperture = 2.0
+dist_to_focus = v3_sub(lookfrom, lookat) -> v3_length
 image_width = 400
 image_height = int_of_float(float_of_int(image_width) /. aspect_ratio)
 samples_per_pixel = 100
 recursion_depth = 50
 
-cam = camera_create(
-  { x = -2.0, y = 2.0, z = 1.0 },
-  { x = 0.0, y = 0.0, z = -1.0 },
-  { x = 0.0, y = 1.0, z = 0.0 },
-  20.0,
-  aspect_ratio
-)
+cam = camera_create(lookfrom, lookat, vup, 50.0, aspect_ratio, aperture, dist_to_focus)
 
 -- world
 ground = { kind = 0, albedo = { x = 0.8, y = 0.8, z = 0.0 }, fuzz_or_ir = 0.0 }
