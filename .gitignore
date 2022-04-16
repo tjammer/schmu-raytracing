@@ -1,2 +1,5 @@
 a.out
-out.o
+*.o
+shell.nix
+.envrc
+*.ppm
