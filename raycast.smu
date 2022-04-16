@@ -36,7 +36,7 @@ type hit_record = {
   t : float,
   front_face : bool
 }
-type scatter_record = { hit: bool, attenuation : color, scattered : ray }
+type scatter_record = { hit : bool, attenuation : color, scattered : ray }
 
 -- We don't have variants yet, so we make an extra return record
 type hit_return = { hit : bool, record : hit_record, material : material }
@@ -53,6 +53,8 @@ type camera = {
   w : v3,
   lens_radius : float
 }
+
+type ref('a) = { mutable content : 'a }
 
 -- There is no float_max_value yet :)
 infinity = 340282346640000000000000000000000000.0
@@ -138,6 +140,11 @@ fun vector_fold(vec, f, init)
 end
 
 -- v3 functions
+fun v3(x, y, z)
+  { x, y, z }
+end
+
+
 fun v3_add(lhs, rhs)
   { x = lhs.x +. rhs.x, y = lhs.y +. rhs.y, z = lhs.z +. rhs.z }
 end
@@ -342,12 +349,14 @@ end
 fun hit_world(world, ray, t_min)
   -- NOTE If I leave the unused t_max in, there are
   -- problems with monomorphization
-  vector_fold(world, fun(acc, sphere)
-    hit = hit_sphere(sphere, ray, t_min, acc.record.t)
-    if hit.hit then hit
-    else acc end
-  end,
-  no_hit)
+  hits = { content = no_hit }
+  vector_iter(world, fun(sphere)
+    hit = hit_sphere(sphere, ray, t_min, hits.content.record.t)
+    if hit.hit then hits.content <- hit
+    else () end
+  end
+  )
+  hits.content
 end
 
 -- Materials
@@ -440,12 +449,21 @@ fun random_scene()
 
   glass = { kind = 2, albedo = { x = 1.0, y = 1.0, z = 1.0 }, fuzz_or_ir = 1.5 }
 
+  ground = { kind = 0, albedo = { x = 0.5, y = 0.5, z = 0.5 }, fuzz_or_ir = 0.0 }
+  vector_push(world,
+    {
+      center = { x = 0.0, y = -1000.0, z = 0.0 },
+      radius = 1000.0,
+      material = ground
+    }
+  )
+
   num_half_spheres = 11
 
-  fun create_spheres(a, b, world)
+  fun create_spheres(a, b)
     if b == num_half_spheres then
-      create_spheres(a + 1, -num_half_spheres, world)
-    elseif a == num_half_spheres then world
+      create_spheres(a + 1, -num_half_spheres)
+    elseif a == num_half_spheres then ()
     else
       mat = random_float()
 
@@ -471,21 +489,12 @@ fun random_scene()
         end
       else () end
 
-      create_spheres(a, b + 1, world)
+      create_spheres(a, b + 1)
     end
   end
 
   -- mutable records in closures apparently don't work
-  world = create_spheres(-num_half_spheres, -num_half_spheres, world)
-
-  ground = { kind = 0, albedo = { x = 0.5, y = 0.5, z = 0.5 }, fuzz_or_ir = 0.0 }
-  vector_push(world,
-    {
-      center = { x = 0.0, y = -1000.0, z = 0.0 },
-      radius = 1000.0,
-      material = ground
-    }
-  )
+  create_spheres(-num_half_spheres, -num_half_spheres)
 
   vector_push(world,
     {
