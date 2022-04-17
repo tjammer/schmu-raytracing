@@ -3,3 +3,4 @@ a.out
 shell.nix
 .envrc
 *.ppm
+raytrace

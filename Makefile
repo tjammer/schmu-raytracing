@@ -6,22 +6,24 @@
 
 .PHONY: all clean run time
 
-all: out.o stub.o
-	cc out.o stub.o -lm
+all: raytrace
 
-out.o: raycast.smu
-	$(SCHMU) raycast.smu
+raytrace: out.o stub.o
+	cc out.o stub.o -lm -o raytrace
+
+out.o: raytrace.smu
+	$(SCHMU) raytrace.smu
 
 stub.o: stub.c
 	cc -c stub.c
 
 run: all
-	./a.out | tee image.ppm
+	./raytrace | tee image.ppm
 
 clean:
-	rm out.o stub.o a.out
+	rm out.o stub.o raytrace
 
 time: all
-	time ./a.out
+	time ./raytrace
 
 # end
