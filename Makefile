@@ -8,11 +8,11 @@
 
 all: raytrace
 
-raytrace: out.o stub.o
-	cc out.o stub.o -lm -o raytrace
+raytrace: raytrace.o stub.o
+	cc raytrace.o stub.o -lm -o raytrace
 
-out.o: raytrace.smu
-	$(SCHMU) raytrace.smu
+raytrace.o: raytrace.smu
+	$(SCHMU) -o raytrace.o raytrace.smu
 
 stub.o: stub.c
 	cc -c stub.c
@@ -21,7 +21,7 @@ run: all
 	./raytrace | tee image.ppm
 
 clean:
-	rm out.o stub.o raytrace
+	rm raytrace.o stub.o raytrace
 
 time: all
 	time ./raytrace
