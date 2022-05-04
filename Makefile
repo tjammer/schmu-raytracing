@@ -12,7 +12,7 @@ raytrace: raytrace.o stub.o
 	cc raytrace.o stub.o -lm -o raytrace
 
 raytrace.o: raytrace.smu
-	$(SCHMU) -o raytrace.o raytrace.smu
+	$(SCHMU) --release raytrace.smu
 
 stub.o: stub.c
 	cc -c stub.c

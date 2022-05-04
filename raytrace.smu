@@ -1,5 +1,3 @@
-type cstr = ptr(u8)
-
 -- We use printing functions of libc
 -- Schmu does not have varargs, so we hardcode for 1 int
 external printf : (cstr, int) -> unit
@@ -13,14 +11,6 @@ external tan : float -> float
 
 external rand_max : unit -> int
 external rand : unit -> int
-
--- these types would belong in a prelude, but that does not exist yet for schmu
-type string = { cstr : cstr, length : int }
-type vector('a) = {
-  mutable data : ptr('a),
-  mutable length : int,
-  mutable capacity : int
-}
 
 type v3 = { x : float, y : float, z : float }
 type point = v3
@@ -94,37 +84,6 @@ end
 
 fun degrees_to_radians(degs)
   degs *. pi /. 180.0
-end
-
--- vector functions
-fun vector_init(capacity)
-  -- __malloc is a builtin, the compiler will free once the ptr
-  -- drops out of scope. (Or, in this case, when the scope the ptr is
-  -- returned to ends)
-  ptr = __malloc(capacity)
-  { data = ptr, length = 0, capacity }
-end
-
-fun vector_push(vec, val)
-  if vec.length == vec.capacity then
-    cap = vec.capacity * 2
-    vec.data <- __realloc(vec.data, cap)
-    vec.capacity <- cap
-  else () end
-  __unsafe_ptr_set(vec.data, vec.length, val)
-  vec.length <- vec.length + 1
-end
-
-fun vector_iter(vec, f)
-  fun inner(i)
-    if i == vec.length then
-      ()
-    else
-      f(__unsafe_ptr_get(vec.data, i))
-      inner(i+1)
-    end
-  end
-  inner(0)
 end
 
 fun v3_add(lhs, rhs)
