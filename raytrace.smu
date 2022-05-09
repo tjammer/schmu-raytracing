@@ -64,144 +64,119 @@ no_hit = {
 
 -- C stdlib wrappers
 -- Wrap these functions so we don't need to write `.cstr` all the time
-fun printi(str, i)
+fun printi(str, i) =
   printf(str.cstr, i)
-end
 
-fun ps(str)
+fun ps(str) =
   puts(str.cstr)
-end
 
-fun random_float()
+fun random_float() =
   -- Returns a random float in [0, 1)
   float_of_int(rand()) /. (float_of_int(rand_max()) +. 1.0)
-end
 
-fun random_range(min, max)
+fun random_range(min, max) =
   -- Returns a random float in [min, max)
   min +. ((max -. min) *. random_float())
-end
 
-fun degrees_to_radians(degs)
+fun degrees_to_radians(degs) =
   degs *. pi /. 180.0
-end
 
-fun v3_add(lhs, rhs)
+fun v3_add(lhs, rhs) =
   { x = lhs.x +. rhs.x, y = lhs.y +. rhs.y, z = lhs.z +. rhs.z }
-end
 
-fun v3_sub(lhs, rhs)
+fun v3_sub(lhs, rhs) =
   { x = lhs.x -. rhs.x, y = lhs.y -. rhs.y, z = lhs.z -. rhs.z }
-end
 
-fun v3_scale(v3, factor)
+fun v3_scale(v3, factor) =
   { x = v3.x *. factor, y = v3.y *. factor, z = v3.z *. factor }
-end
 
-fun v3_scale_elems(lhs, rhs)
+fun v3_scale_elems(lhs, rhs) =
   { x = lhs.x *. rhs.x, y = lhs.y *. rhs.y, z = lhs.z *. rhs.z }
-end
 
-fun v3_div(v3, factor)
+fun v3_div(v3, factor) =
   { x = v3.x /. factor, y = v3.y /. factor, z = v3.z /. factor }
-end
 
-fun v3_dot(lhs, rhs)
+fun v3_dot(lhs, rhs) =
   (lhs.x *. rhs.x) +. (lhs.y *. rhs.y) +. (lhs.z *. rhs.z)
-end
 
-fun v3_length(v3)
-  v3_dot(v3, v3) -> sqrt
-end
+fun v3_length(v3) =
+  v3_dot(v3, v3) |> sqrt
 
-fun v3_norm(v3)
-  length = v3_dot(v3, v3) -> sqrt
+fun v3_norm(v3) =
+  length = v3_dot(v3, v3) |> sqrt
   v3_div(v3, length)
-end
 
-fun v3_random()
+fun v3_random() =
   {
     x = random_float(),
     y = random_float(),
     z = random_float()
   }
-end
 
-fun v3_random_range(min, max)
+fun v3_random_range(min, max) =
   {
     x = random_range(min, max),
     y = random_range(min, max),
     z = random_range(min, max)
   }
-end
 
-fun v3_random_in_unit_sphere()
+fun v3_random_in_unit_sphere() =
   p = v3_random_range(-1.0, 1.0)
   if v3_dot(p, p) <. 1.0 then p
-  else v3_random_in_unit_sphere() end
-end
+  else v3_random_in_unit_sphere()
 
-fun v3_random_unit_v3()
-  v3_random_in_unit_sphere() -> v3_norm()
-end
+fun v3_random_unit_v3() =
+  v3_random_in_unit_sphere() |> v3_norm()
 
-fun v3_random_in_unit_disk()
+fun v3_random_in_unit_disk() =
   p = { x = random_range(-1.0, 1.0), y = random_range(-1.0, 1.0), z = 0.0 }
   if v3_dot(p, p) <. 1.0 then p
-  else v3_random_in_unit_disk() end
-end
+  else v3_random_in_unit_disk()
 
-fun v3_near_zero(v3)
+fun v3_near_zero(v3) =
   s = 0.00000001
   abs(v3.x) <. s and abs(v3.y) <. s and abs(v3.z) <. s
-end
 
-fun v3_reflect(v3, n)
+fun v3_reflect(v3, n) =
   v3_sub(v3, v3_scale(n, v3_dot(v3, n) *. 2.0))
-end
 
-fun v3_refract(uv, n, etai_over_etat)
-  cos_theta = v3_dot(v3_scale(uv, -1.0), n) -> fmin(1.0)
-  r_out_perp = v3_scale(n, cos_theta) -> v3_add(uv) -> v3_scale(etai_over_etat)
+fun v3_refract(uv, n, etai_over_etat) =
+  cos_theta = v3_dot(v3_scale(uv, -1.0), n) |> fmin(1.0)
+  r_out_perp = v3_scale(n, cos_theta) |> v3_add(uv) |> v3_scale(etai_over_etat)
   r_out_parallel = v3_scale(n, -sqrt(abs(1.0 -. v3_dot(r_out_perp, r_out_perp))))
   v3_add(r_out_perp, r_out_parallel)
-end
 
-fun v3_cross(u, v)
+fun v3_cross(u, v) =
   {
     x = (u.y *. v.z) -. (u.z *. v.y),
     y = (u.z *. v.x) -. (u.x *. v.z),
     z = (u.x *. v.y) -. (u.y *. v.x)
   }
-end
 
 -- utility
-fun clamp(x, min, max)
+fun clamp(x, min, max) =
   if x <. min then min
   elseif x >. max then max
-  else x end
-end
+  else x
 
 -- color functions
-fun write_color(color, samples_per_pixel)
+fun write_color(color, samples_per_pixel) =
   scale = 1.0 /. samples_per_pixel
   -- pseudo gamma correction
   r = sqrt(color.x *. scale)
   g = sqrt(color.y *. scale)
   b = sqrt(color.z *. scale)
 
-  printi("%i ", (clamp(r, 0.0, 0.999) *. 256.0) -> int_of_float)
-  printi("%i ", (clamp(g, 0.0, 0.999) *. 256.0) -> int_of_float)
-  printi("%i\n", (clamp(b, 0.0, 0.999) *. 256.0) -> int_of_float)
-end
+  printi("%i ", (clamp(r, 0.0, 0.999) *. 256.0) |> int_of_float)
+  printi("%i ", (clamp(g, 0.0, 0.999) *. 256.0) |> int_of_float)
+  printi("%i\n", (clamp(b, 0.0, 0.999) *. 256.0) |> int_of_float)
 
 -- ray functions
-fun ray_at(ray, t)
-  v3_scale(ray.dir, t) -> v3_add(ray.orig)
-end
+fun ray_at(ray, t) =
+  v3_scale(ray.dir, t) |> v3_add(ray.orig)
 
 -- camera functions
-fun camera_create(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist)
+fun camera_create(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist) =
   theta = degrees_to_radians(vfov)
   h = tan(theta /. 2.0)
   viewport_height = 2.0 *. h
@@ -211,36 +186,33 @@ fun camera_create(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dis
   u = v3_norm(v3_cross(vup, w))
   v = v3_cross(w, u)
 
-  horizontal = v3_scale(u, viewport_width) -> v3_scale(focus_dist)
-  vertical = v3_scale(v, viewport_height) -> v3_scale(focus_dist)
+  horizontal = v3_scale(u, viewport_width) |> v3_scale(focus_dist)
+  vertical = v3_scale(v, viewport_height) |> v3_scale(focus_dist)
   {
     origin = lookfrom,
-    lower_left_corner = v3_sub(lookfrom, v3_div(horizontal, 2.0)) ->
-      v3_sub(v3_div(vertical, 2.0)) -> v3_sub(v3_scale(w, focus_dist)),
+    lower_left_corner = v3_sub(lookfrom, v3_div(horizontal, 2.0)) |>
+      v3_sub(v3_div(vertical, 2.0)) |> v3_sub(v3_scale(w, focus_dist)),
     horizontal,
     vertical,
     lens_radius = aperture /. 2.0,
     u, v, w
   }
-end
 
-fun camera_get_ray(camera, u, v)
+fun camera_get_ray(camera, u, v) =
   rd = v3_scale(v3_random_in_unit_disk(), camera.lens_radius)
-  offset = v3_scale(camera.u, rd.x) -> v3_add(v3_scale(camera.v, rd.y))
+  offset = v3_scale(camera.u, rd.x) |> v3_add(v3_scale(camera.v, rd.y))
 
   dir = v3_add(camera.lower_left_corner, v3_scale(camera.horizontal, u))
-     -> v3_add(v3_scale(camera.vertical, v)) -> v3_sub(camera.origin)
-     -> v3_sub(offset)
+     |> v3_add(v3_scale(camera.vertical, v)) |> v3_sub(camera.origin)
+     |> v3_sub(offset)
   { orig = v3_add(camera.origin, offset), dir }
-end
 
 -- sphere collision function
-fun hit_sphere(sphere, ray, t_min, t_max)
-  fun outside(root)
+fun hit_sphere(sphere, ray, t_min, t_max) =
+  fun outside(root) =
     root <. t_min or t_max <. root
-  end
 
-  oc = ray.orig -> v3_sub(sphere.center)
+  oc = ray.orig |> v3_sub(sphere.center)
   a = v3_dot(ray.dir, ray.dir)
   half_b = v3_dot(oc, ray.dir)
   c = v3_dot(oc, oc) -. (sphere.radius *. sphere.radius)
@@ -254,12 +226,12 @@ fun hit_sphere(sphere, ray, t_min, t_max)
 
     -- Find the nearest root that lies in the acceptable range
     -- Helper function to return a root
-    fun return_root(root)
+    fun return_root(root) =
       p = ray_at(ray, root)
-      outward_normal = v3_sub(p, sphere.center) -> v3_div(sphere.radius)
+      outward_normal = v3_sub(p, sphere.center) |> v3_div(sphere.radius)
       front_face = v3_dot(ray.dir, outward_normal) <. 0.0
       normal = if front_face then outward_normal
-               else v3_scale(outward_normal, -1.0) end
+               else v3_scale(outward_normal, -1.0)
 
       { hit = true,
         record = {
@@ -270,7 +242,6 @@ fun hit_sphere(sphere, ray, t_min, t_max)
         },
         material = sphere.material
       }
-    end
 
     root = (-half_b -. sqrtd) /. a
     if outside(root) then
@@ -279,89 +250,80 @@ fun hit_sphere(sphere, ray, t_min, t_max)
         no_hit
       else
         return_root(root)
-      end
     else
       return_root(root)
-    end
-  end
-end
 
 -- World collision function
-fun hit_world(world, ray, t_min)
+fun hit_world(world, ray, t_min) =
   -- NOTE If I leave the unused t_max in, there are
   -- problems with monomorphization
   hits = { content = no_hit }
-  vector_iter(world, fun(sphere)
+  vector_iter(world, fun(sphere) ->
     hit = hit_sphere(sphere, ray, t_min, hits.content.record.t)
     if hit.hit then hits.content <- hit
-    else () end
-  end
+    else ()
   )
   hits.content
-end
 
 -- Materials
-fun lambertian_scatter(hit)
+fun lambertian_scatter(hit) =
   scatter_direction = v3_add(hit.record.normal, v3_random_unit_v3())
   scatter_direction =
     if v3_near_zero(scatter_direction) then hit.record.normal
-    else scatter_direction end
+    else scatter_direction
   {
     hit = true,
     attenuation = hit.material.albedo,
     scattered = { orig = hit.record.p, dir = scatter_direction }
   }
-end
 
-fun metal_scatter(ray_in, hit)
-  reflected = v3_norm(ray_in.dir) -> v3_reflect(hit.record.normal)
+fun metal_scatter(ray_in, hit) =
+  reflected = v3_norm(ray_in.dir) |> v3_reflect(hit.record.normal)
   dir = v3_scale(v3_random_unit_v3(), hit.material.fuzz_or_ir)
-    -> v3_add(reflected)
+    |> v3_add(reflected)
   {
     hit = v3_dot(reflected, hit.record.normal) >. 0.0,
     attenuation = hit.material.albedo,
     scattered = { orig = hit.record.p, dir }
   }
-end
 
-fun dielectric_scatter(ray_in, hit)
-    fun reflectance(cosine, ref_idx)
-      -- Schlick's approximation for reflectance
-      r0 = (1.0 -. ref_idx) /. (1.0 +. ref_idx)
-      r0 = r0 *. r0
-      r0 +. ((1.0 -. r0) *. pow(1.0 -. cosine, 5.0))
-    end
+fun dielectric_scatter(ray_in, hit) =
+  fun reflectance(cosine, ref_idx) =
+    -- Schlick's approximation for reflectance
+    r0 = (1.0 -. ref_idx) /. (1.0 +. ref_idx)
+    r0 = r0 *. r0
+    r0 +. ((1.0 -. r0) *. pow(1.0 -. cosine, 5.0))
 
-  refrac_ratio = if hit.record.front_face then
+  refrac_ratio =
+    if hit.record.front_face then
       1.0 /. hit.material.fuzz_or_ir
-    else hit.material.fuzz_or_ir end
+    else hit.material.fuzz_or_ir
 
   unit_dir = v3_norm(ray_in.dir)
-  cos_theta = v3_dot(v3_scale(unit_dir, -1.0), hit.record.normal) -> fmin(1.0)
+  cos_theta = v3_dot(v3_scale(unit_dir, -1.0), hit.record.normal) |> fmin(1.0)
   sin_theta = sqrt(1.0 -. (cos_theta *. cos_theta))
 
   cannot_refract = (refrac_ratio *. sin_theta) >. 1.0
-  dir = if cannot_refract or (reflectance(cos_theta, refrac_ratio) >. random_float()) then
+  dir =
+    if cannot_refract or (reflectance(cos_theta, refrac_ratio)
+        >. random_float()) then
       v3_reflect(unit_dir, hit.record.normal)
     else
       v3_refract(unit_dir, hit.record.normal, refrac_ratio)
-    end
 
   {
     hit = true,
     attenuation = { x = 1.0, y = 1.0, z = 1.0 },
     scattered = { orig = hit.record.p, dir = dir }
   }
-end
 
-fun scatter(ray_in, hit : hit_return)
+fun scatter(ray_in, hit : hit_return) =
   if hit.material.kind == 0 then lambertian_scatter(hit)
   elseif hit.material.kind == 1 then metal_scatter(ray_in, hit)
-  else dielectric_scatter(ray_in, hit) end
-end
+  else dielectric_scatter(ray_in, hit)
 
 -- Returns the color of a given ray
-fun ray_color(ray, world, depth)
+fun ray_color(ray, world, depth) =
   if depth == 0 then
     -- No light is gathered
     { x = 0.0, y = 0.0, z = 0.0 }
@@ -374,18 +336,14 @@ fun ray_color(ray, world, depth)
         v3_scale_elems(ray_color(sctr.scattered, world, depth - 1), sctr.attenuation)
       else
         { x = 0.0, y = 0.0, z = 0.0 }
-      end
     else
       unit_dir = v3_norm(ray.dir)
       t = 0.5 *. (unit_dir.y +. 1.0)
       -- lerp
       v3_scale({ x = 1.0, y = 1.0, z = 1.0 }, (1.0 -. t) *. 1.0)
-      -> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t *. 1.0))
-    end
-  end
-end
+      |> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t *. 1.0))
 
-fun random_scene()
+fun random_scene() =
   world = vector_init(32)
 
   glass = { kind = 2, albedo = { x = 1.0, y = 1.0, z = 1.0 }, fuzz_or_ir = 1.5 }
@@ -401,7 +359,7 @@ fun random_scene()
 
   num_half_spheres = 11
 
-  fun create_spheres(a, b)
+  fun create_spheres(a, b) =
     if b == num_half_spheres then
       create_spheres(a + 1, -num_half_spheres)
     elseif a == num_half_spheres then ()
@@ -427,12 +385,9 @@ fun random_scene()
           vector_push(world, { center, radius = 0.2, material })
         else
           vector_push(world, { center, radius = 0.2, material = glass })
-        end
-      else () end
+      else ()
 
       create_spheres(a, b + 1)
-    end
-  end
 
   -- mutable records in closures apparently don't work
   create_spheres(-num_half_spheres, -num_half_spheres)
@@ -470,7 +425,6 @@ fun random_scene()
   )
 
   world
-end
 
 -- image
 aspect_ratio = 16.0 /. 9.0
@@ -490,13 +444,13 @@ cam = camera_create(lookfrom, lookat, vup, 20.0, aspect_ratio, aperture, dist_to
 -- world
 world = random_scene()
 
-fun render(width, height)
+fun render(width, height) =
   if width == image_width then
     render(0, height - 1)
   elseif height < 0 then -- The book does it this way, so we follow suit
     ()
   else
-    fun loop_samples(color, i)
+    fun loop_samples(color, i) =
       if i == samples_per_pixel then
         color
       else
@@ -506,27 +460,22 @@ fun render(width, height)
           /. float_of_int(image_height - 1)
 
         ray = camera_get_ray(cam, u, v)
-        color = ray_color(ray, world, recursion_depth) -> v3_add(color)
+        color = ray_color(ray, world, recursion_depth) |> v3_add(color)
         loop_samples(color, i + 1)
-      end
-    end
 
     no_color = { x = 0.0, y = 0.0, z = 0.0 }
     color = loop_samples(no_color, 0)
 
-    write_color(color, samples_per_pixel -> float_of_int)
+    write_color(color, samples_per_pixel |> float_of_int)
 
     -- recurse
     render(width + 1, height)
-  end
-end
 
-fun write_header()
+fun write_header() =
   ps("P3")
   printi("%i ", image_width)
   printi("%i\n", image_height)
   ps("255")
-end
 
 write_header()
 render(0, image_height - 1)
