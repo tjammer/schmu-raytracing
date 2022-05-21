@@ -16,10 +16,10 @@ type v3 = { x : float, y : float, z : float }
 type point = v3
 type color = v3
 type ray = { orig : point, dir : v3 }
--- We don't have variants yet, so we 'enumerate' materials here:
--- 0: lambertian
--- 1: metal
-type material = { kind : int, albedo : color, fuzz_or_ir : float }
+
+type metal = { albedo : color, fuzz : float }
+type material = Lambertian(color), Metal(metal), Glass(float)
+
 type hit_record = {
   p : point,
   normal : v3,
@@ -28,8 +28,7 @@ type hit_record = {
 }
 type scatter_record = { hit : bool, attenuation : color, scattered : ray }
 
--- We don't have variants yet, so we make an extra return record
-type hit_return = { hit : bool, record : hit_record, material : material }
+type hit_return = { record : hit_record, material : material }
 
 type sphere = { center : point, radius : float, material : material }
 
@@ -49,18 +48,6 @@ type ref('a) = { mutable content : 'a }
 -- There is no float_max_value yet :)
 infinity = 340282346640000000000000000000000000.0
 pi = 3.1415926535897932385
-
--- Constant for case of no hit
-no_hit = {
-  hit = false,
-  record = {
-    p = { x = 0.0, y = 0.0, z = 0.0 },
-    normal = { x = 0.0, y = 0.0, z = 0.0 },
-    t = infinity,
-    front_face = false
-  },
-  material = { kind = 0, albedo = { x = 0.0, y = 0.0, z = 0.0 }, fuzz_or_ir = 1.0 }
-}
 
 -- C stdlib wrappers
 -- Wrap these functions so we don't need to write `.cstr` all the time
@@ -172,8 +159,7 @@ fun write_color(color, samples_per_pixel) =
   printi("%i\n", (clamp(b, 0.0, 0.999) *. 256.0) |> int_of_float)
 
 -- ray functions
-fun ray_at(ray, t) =
-  v3_scale(ray.dir, t) |> v3_add(ray.orig)
+fun ray_at(ray, t) = v3_scale(ray.dir, t) |> v3_add(ray.orig)
 
 -- camera functions
 fun camera_create(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, focus_dist) =
@@ -220,7 +206,7 @@ fun hit_sphere(sphere, ray, t_min, t_max) =
   discriminant = (half_b *. half_b) -. (a *. c)
 
   if discriminant <. 0.0 then
-    no_hit
+    None
   else
     sqrtd = sqrt(discriminant)
 
@@ -233,7 +219,7 @@ fun hit_sphere(sphere, ray, t_min, t_max) =
       normal = if front_face then outward_normal
                else v3_scale(outward_normal, -1.0)
 
-      { hit = true,
+      Some({
         record = {
           t = root,
           p = p,
@@ -241,13 +227,13 @@ fun hit_sphere(sphere, ray, t_min, t_max) =
           front_face = front_face
         },
         material = sphere.material
-      }
+      })
 
     root = (-half_b -. sqrtd) /. a
     if outside(root) then
       root = (-half_b +. sqrtd) /. a
       if outside(root) then
-        no_hit
+        None
       else
         return_root(root)
     else
@@ -255,39 +241,40 @@ fun hit_sphere(sphere, ray, t_min, t_max) =
 
 -- World collision function
 fun hit_world(world, ray, t_min) =
-  -- NOTE If I leave the unused t_max in, there are
-  -- problems with monomorphization
-  hits = { content = no_hit }
+  hits = { content = None }
+  t_max = { content = infinity }
   vector_iter(world, fun(sphere) ->
-    hit = hit_sphere(sphere, ray, t_min, hits.content.record.t)
-    if hit.hit then hits.content <- hit
-    else ()
+    match hit_sphere(sphere, ray, t_min, t_max.content) with
+      Some(hit) ->
+        hits.content <- Some(hit)
+        t_max.content <- hit.record.t
+      None -> ()
   )
   hits.content
 
 -- Materials
-fun lambertian_scatter(hit) =
+fun lambertian_scatter(hit, color) =
   scatter_direction = v3_add(hit.record.normal, v3_random_unit_v3())
   scatter_direction =
     if v3_near_zero(scatter_direction) then hit.record.normal
     else scatter_direction
   {
     hit = true,
-    attenuation = hit.material.albedo,
+    attenuation = color,
     scattered = { orig = hit.record.p, dir = scatter_direction }
   }
 
-fun metal_scatter(ray_in, hit) =
+fun metal_scatter(ray_in, hit, mat) =
   reflected = v3_norm(ray_in.dir) |> v3_reflect(hit.record.normal)
-  dir = v3_scale(v3_random_unit_v3(), hit.material.fuzz_or_ir)
+  dir = v3_scale(v3_random_unit_v3(), mat.fuzz)
     |> v3_add(reflected)
   {
     hit = v3_dot(reflected, hit.record.normal) >. 0.0,
-    attenuation = hit.material.albedo,
+    attenuation = mat.albedo,
     scattered = { orig = hit.record.p, dir }
   }
 
-fun dielectric_scatter(ray_in, hit) =
+fun dielectric_scatter(ray_in, hit, ir) =
   fun reflectance(cosine, ref_idx) =
     -- Schlick's approximation for reflectance
     r0 = (1.0 -. ref_idx) /. (1.0 +. ref_idx)
@@ -295,9 +282,8 @@ fun dielectric_scatter(ray_in, hit) =
     r0 +. ((1.0 -. r0) *. pow(1.0 -. cosine, 5.0))
 
   refrac_ratio =
-    if hit.record.front_face then
-      1.0 /. hit.material.fuzz_or_ir
-    else hit.material.fuzz_or_ir
+    if hit.record.front_face then 1.0 /. ir
+    else ir
 
   unit_dir = v3_norm(ray_in.dir)
   cos_theta = v3_dot(v3_scale(unit_dir, -1.0), hit.record.normal) |> fmin(1.0)
@@ -317,10 +303,10 @@ fun dielectric_scatter(ray_in, hit) =
     scattered = { orig = hit.record.p, dir = dir }
   }
 
-fun scatter(ray_in, hit : hit_return) =
-  if hit.material.kind == 0 then lambertian_scatter(hit)
-  elseif hit.material.kind == 1 then metal_scatter(ray_in, hit)
-  else dielectric_scatter(ray_in, hit)
+fun scatter(ray_in, hit : hit_return) = match hit.material with
+  Lambertian(lamb) -> lambertian_scatter(hit, lamb)
+  Metal(metal) -> metal_scatter(ray_in, hit, metal)
+  Glass(ir) -> dielectric_scatter(ray_in, hit, ir)
 
 -- Returns the color of a given ray
 fun ray_color(ray, world, depth) =
@@ -328,27 +314,25 @@ fun ray_color(ray, world, depth) =
     -- No light is gathered
     { x = 0.0, y = 0.0, z = 0.0 }
   else
-    hit = hit_world(world, ray, 0.001)
-    if hit.hit then
-      sctr = scatter(ray, hit)
-      if sctr.hit then
-        -- no tail call
-        v3_scale_elems(ray_color(sctr.scattered, world, depth - 1), sctr.attenuation)
-      else
-        { x = 0.0, y = 0.0, z = 0.0 }
-    else
-      unit_dir = v3_norm(ray.dir)
-      t = 0.5 *. (unit_dir.y +. 1.0)
-      -- lerp
-      v3_scale({ x = 1.0, y = 1.0, z = 1.0 }, (1.0 -. t) *. 1.0)
-      |> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t *. 1.0))
+    match hit_world(world, ray, 0.001) with
+      Some(hit) ->
+        sctr = scatter(ray, hit)
+        if sctr.hit then
+          -- no tail call
+          v3_scale_elems(ray_color(sctr.scattered, world, depth - 1), sctr.attenuation)
+        else
+          { x = 0.0, y = 0.0, z = 0.0 }
+      None ->
+        unit_dir = v3_norm(ray.dir)
+        t = 0.5 *. (unit_dir.y +. 1.0)
+        -- lerp
+        v3_scale({ x = 1.0, y = 1.0, z = 1.0 }, (1.0 -. t) *. 1.0)
+        |> v3_add(v3_scale({ x = 0.5, y = 0.7, z = 1.0 }, t *. 1.0))
 
 fun random_scene() =
   world = vector_init(32)
 
-  glass = { kind = 2, albedo = { x = 1.0, y = 1.0, z = 1.0 }, fuzz_or_ir = 1.5 }
-
-  ground = { kind = 0, albedo = { x = 0.5, y = 0.5, z = 0.5 }, fuzz_or_ir = 0.0 }
+  ground = Lambertian({ x = 0.5, y = 0.5, z = 0.5 })
   vector_push(world,
     {
       center = { x = 0.0, y = -1000.0, z = 0.0 },
@@ -377,14 +361,14 @@ fun random_scene() =
       if v3_length(p) >. 0.9 then
         if mat <. 0.8 then
           albedo = v3_scale_elems(v3_random(), v3_random())
-          material = { kind = 0, albedo, fuzz_or_ir = 0.0 }
+          material = Lambertian(albedo)
           vector_push(world, { center, radius = 0.2, material })
         elseif mat <. 0.95 then
           albedo = v3_random_range(0.5, 1.0)
-          material = { kind = 1, albedo, fuzz_or_ir = random_range(0.0, 0.5) }
+          material = Metal({ albedo, fuzz = random_range(0.0, 0.5) })
           vector_push(world, { center, radius = 0.2, material })
         else
-          vector_push(world, { center, radius = 0.2, material = glass })
+          vector_push(world, { center, radius = 0.2, material = Glass(1.5) })
       else ()
 
       create_spheres(a, b + 1)
@@ -396,7 +380,7 @@ fun random_scene() =
     {
       center = { x = 0.0, y = 1.0, z = 0.0 },
       radius = 1.0,
-      material = glass
+      material = Glass(1.5)
     }
   )
 
@@ -404,11 +388,7 @@ fun random_scene() =
     {
       center = { x = -4.0, y = 1.0, z = 0.0 },
       radius = 1.0,
-      material = {
-        kind = 0,
-        albedo = { x = 0.4, y = 0.2, z = 0.1 },
-        fuzz_or_ir = 0.0
-      }
+      material = Lambertian({ x = 0.4, y = 0.2, z = 0.1 })
     }
   )
 
@@ -416,11 +396,10 @@ fun random_scene() =
     {
       center = { x = 4.0, y = 1.0, z = 0.0 },
       radius = 1.0,
-      material = {
-        kind = 1,
+      material = Metal({
         albedo = { x = 0.7, y = 0.6, z = 0.5 },
-        fuzz_or_ir = 0.0
-      }
+        fuzz = 0.0
+      })
     }
   )
 
