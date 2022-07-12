@@ -1,24 +1,16 @@
+open V3
+
 -- We use printing functions of libc
 -- Schmu does not have varargs, so we hardcode for 1 int
 external printf : (cstr, int) -> unit
 external puts : cstr -> unit
 
-external sqrt : float -> float
-external abs : float -> float
-external fmin : (float, float) -> float
-external pow : (float, float) -> float
-external tan : float -> float
-
-external rand_max : unit -> int
-external rand : unit -> int
-
-type v3 = { x : float, y : float, z : float }
 type point = v3
 type color = v3
 type ray = { orig : point, dir : v3 }
 
 type metal = { albedo : color, fuzz : float }
-type material = Lambertian(color), Metal(metal), Glass(float)
+type material = Lambertian(color) | Metal(metal) | Glass(float)
 
 type hit_record = {
   p : point,
@@ -57,88 +49,8 @@ fun printi(str, i) =
 fun ps(str) =
   puts(str.cstr)
 
-fun random_float() =
-  -- Returns a random float in [0, 1)
-  float_of_int(rand()) /. (float_of_int(rand_max()) +. 1.0)
-
-fun random_range(min, max) =
-  -- Returns a random float in [min, max)
-  min +. ((max -. min) *. random_float())
-
 fun degrees_to_radians(degs) =
   degs *. pi /. 180.0
-
-fun v3_add(lhs, rhs) =
-  { x = lhs.x +. rhs.x, y = lhs.y +. rhs.y, z = lhs.z +. rhs.z }
-
-fun v3_sub(lhs, rhs) =
-  { x = lhs.x -. rhs.x, y = lhs.y -. rhs.y, z = lhs.z -. rhs.z }
-
-fun v3_scale(v3, factor) =
-  { x = v3.x *. factor, y = v3.y *. factor, z = v3.z *. factor }
-
-fun v3_scale_elems(lhs, rhs) =
-  { x = lhs.x *. rhs.x, y = lhs.y *. rhs.y, z = lhs.z *. rhs.z }
-
-fun v3_div(v3, factor) =
-  { x = v3.x /. factor, y = v3.y /. factor, z = v3.z /. factor }
-
-fun v3_dot(lhs, rhs) =
-  (lhs.x *. rhs.x) +. (lhs.y *. rhs.y) +. (lhs.z *. rhs.z)
-
-fun v3_length(v3) =
-  v3_dot(v3, v3) |> sqrt
-
-fun v3_norm(v3) =
-  length = v3_dot(v3, v3) |> sqrt
-  v3_div(v3, length)
-
-fun v3_random() =
-  {
-    x = random_float(),
-    y = random_float(),
-    z = random_float()
-  }
-
-fun v3_random_range(min, max) =
-  {
-    x = random_range(min, max),
-    y = random_range(min, max),
-    z = random_range(min, max)
-  }
-
-fun v3_random_in_unit_sphere() =
-  p = v3_random_range(-1.0, 1.0)
-  if v3_dot(p, p) <. 1.0 then p
-  else v3_random_in_unit_sphere()
-
-fun v3_random_unit_v3() =
-  v3_random_in_unit_sphere() |> v3_norm()
-
-fun v3_random_in_unit_disk() =
-  p = { x = random_range(-1.0, 1.0), y = random_range(-1.0, 1.0), z = 0.0 }
-  if v3_dot(p, p) <. 1.0 then p
-  else v3_random_in_unit_disk()
-
-fun v3_near_zero(v3) =
-  s = 0.00000001
-  abs(v3.x) <. s and abs(v3.y) <. s and abs(v3.z) <. s
-
-fun v3_reflect(v3, n) =
-  v3_sub(v3, v3_scale(n, v3_dot(v3, n) *. 2.0))
-
-fun v3_refract(uv, n, etai_over_etat) =
-  cos_theta = v3_dot(v3_scale(uv, -1.0), n) |> fmin(1.0)
-  r_out_perp = v3_scale(n, cos_theta) |> v3_add(uv) |> v3_scale(etai_over_etat)
-  r_out_parallel = v3_scale(n, -sqrt(abs(1.0 -. v3_dot(r_out_perp, r_out_perp))))
-  v3_add(r_out_perp, r_out_parallel)
-
-fun v3_cross(u, v) =
-  {
-    x = (u.y *. v.z) -. (u.z *. v.y),
-    y = (u.z *. v.x) -. (u.x *. v.z),
-    z = (u.x *. v.y) -. (u.y *. v.x)
-  }
 
 -- utility
 fun clamp(x, min, max) =
